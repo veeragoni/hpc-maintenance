@@ -1,0 +1,17 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maintenancetool"
+version = "0.1.0"
+description = "OCI / Slurm maintenance orchestrator"
+authors = [{ name = "SCE", email = "suresh.veeragoni@oracle.com" }]
+readme = "README.md"
+license = { text = "Copyright Oracle." }
+requires-python = ">=3.9"
+dependencies = ["oci"]
+
+[project.scripts]
+maintenancetool = "maintenancetool.cli:main"
