@@ -1,10 +1,11 @@
 import argparse, logging
 from oci.core.models import InstanceMaintenanceEvent
 from .logging_util import setup_logging
-from .orchestrator import run_once
+from .orchestrator import run_once, run_loop
 from . import __version__
 from .phases import discovery, drain, maintenance, health, finalize
 from .models import MaintenanceJob
+from .reporting import print_faults_summary
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -15,9 +16,17 @@ def main() -> None:
                         version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command")
 
-    # Subcommand for running the full maintenance workflow
-    parser_run = subparsers.add_parser("run", help="Run the full maintenance workflow")
-    parser_run.set_defaults(func=run_once)
+    # Subcommand for running the full maintenance workflow once
+    parser_run = subparsers.add_parser("run", help="Run the full maintenance workflow once")
+    parser_run.set_defaults(func=lambda args: run_once())
+
+    # Subcommand for running the periodic maintenance loop
+    parser_loop = subparsers.add_parser("loop", help="Run the periodic maintenance loop (15m interval by default)")
+    parser_loop.set_defaults(func=lambda args: run_loop())
+
+    # Subcommand for reporting: show raw fault codes and node mapping
+    parser_report = subparsers.add_parser("report", help="Print discovered fault codes and node mapping")
+    parser_report.set_defaults(func=lambda args: print_faults_summary())
 
     # Subcommand for discovery phase
     parser_discovery = subparsers.add_parser("discover", help="Run discovery phase")

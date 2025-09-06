@@ -1,6 +1,8 @@
 from ..models import MaintenanceJob
 from ..config import PROCESSED_TAG
 from ..oci_utils import trigger_update, is_event_complete
+from ..slrum_utils import set_reason
+from ..mgmt_utils import mgmt_update_node_status
 import time, logging
 from ..config import MAINT_POLL_SEC
 
@@ -23,11 +25,26 @@ def execute(job: MaintenanceJob) -> None:
             event_id=job.event.id,
             time_window_start=scheduled_time
         )
-        # Wait for the maintenance to move to a new state, then complete
+
         if job.work_request:
+            # Only update reason/MGMT if scheduling was accepted
+            reason_fault = job.approved_fault or job.fault_str
+            if reason_fault:
+                try:
+                    set_reason(job.hostname, f"NTR scheduled: {reason_fault}")
+                except Exception as e:
+                    log.warning("Failed to set Slurm reason for %s: %s", job.hostname, e)
+            try:
+                mgmt_update_node_status(job.hostname, "NTR scheduled", {"fault_code": reason_fault, "event_id": job.event.id})
+            except Exception as e:
+                log.warning("Failed to update MGMT status for %s: %s", job.hostname, e)
+
+            # Wait for the maintenance to move to a new state, then complete
             while not is_event_complete(job.event.id):
                 time.sleep(MAINT_POLL_SEC)
-        job.done = True
+            job.done = True
+        else:
+            log.warning("Scheduling not permitted for event %s; skipping reason/MGMT updates.", job.event.id)
         return
 
     # For all other states: log and return; nothing to be done.

@@ -1,2 +1,6 @@
 oci
 pytest
+clustershell
+sqlalchemy
+rich
+pymysql

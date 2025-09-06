@@ -11,8 +11,8 @@ log = logging.getLogger(__name__)
 def _host_map() -> dict[str, str]:
     log.info("Retrieving host map")
     njson = run_cmd([
-        "/config/venv/Ubuntu_22.04_x86_64/bin/python3",
-        "/config/mgmt/manage.py", "nodes", "list", "json"
+        ".venv/bin/python3",
+        "/config/mgmt/manage.py", "nodes", "list", "--format", "json"
     ])
     host_map = {n["ocid"]: n["hostname"] for n in json.loads(njson)}
     log.info("Host map contains %d entries", len(host_map))
@@ -38,18 +38,35 @@ def discover() -> list[MaintenanceJob]:
                 log.debug("Skipping processed event %s", ev.id)
                 continue
 
+            additional = ev.additional_details or {}
+            fault_details = additional.get('fault_details') or additional.get('faultDetails') or []
+            # Some providers return fault_details as a JSON string; parse if needed
+            if isinstance(fault_details, str):
+                try:
+                    fault_details = json.loads(fault_details)
+                except Exception:
+                    log.warning("fault_details not JSON-decodable for event %s: %s", ev.id, fault_details)
+                    fault_details = []
+
+            fault_ids = []
+            for d in fault_details:
+                fid = (d.get('fault_id') or d.get('faultId'))
+                if fid:
+                    fault_ids.append(fid)
+
             faults = "_".join(
-                f"{d['fault_id']}_{d['component']}"
-                for d in (ev.additional_details or {}).get('fault_details', [])
+                f"{(d.get('fault_id') or d.get('faultId'))}_{(d.get('component') or d.get('faultComponent'))}"
+                for d in fault_details
             )
             log.debug("Processing event %s for instance %s", ev.id, ev.instance_id)
             host = hmap.get(ev.instance_id)
             if host:
                 log.debug("Found hostname %s for OCID %s", host, ev.instance_id)
-                jobs.append(MaintenanceJob(ev, host, faults))
+                jobs.append(MaintenanceJob(ev, host, faults, fault_ids=fault_ids))
             else:
                 log.warning("No hostname for OCID %s", ev.instance_id)
     log.info("Discovered %d maintenance jobs", len(jobs))
     for job in jobs:
-        log.info("Maintenance job: %s - Event OCID: %s - Instance OCID: %s", job.hostname, job.event.id, job.event.instance_id)
+        log.info("Maintenance job: %s - Event OCID: %s - Instance OCID: %s | fault_ids=%s | normalized=%s",
+                 job.hostname, job.event.id, job.event.instance_id, job.fault_ids, job.fault_str)
     return jobs
