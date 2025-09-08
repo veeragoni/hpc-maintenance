@@ -134,3 +134,89 @@ The tool's configuration is managed through the `config.py` module. Key configur
 ## Dependencies
 
 The project dependencies are listed in `requirements.txt`. Ensure you have the necessary dependencies installed before running the tool.
+
+## Current State Additions
+
+- Stage-only workflow:
+  - Command: maintenancetool stage
+  - Steps: Discover → Drain → Schedule (skips Health and Finalize)
+  - Use when you only want to drain and schedule maintenance while we iterate on post-maintenance actions.
+- Dry-run mode:
+  - Available on run, loop, and stage via --dry-run or -n
+  - Prints intended actions only; does not call scontrol or schedule the OCI maintenance.
+- JSONL event audit:
+  - File: logs/events.jsonl (configurable via EVENTS_LOG_FILE)
+  - Records key transitions for drain and maintenance (see examples below).
+- Guardrails:
+  - DAILY_SCHEDULE_CAP limits how many nodes can be actioned per pass.
+- Exact fault matching and exclusions:
+  - Approved fault codes are matched exactly from config/approved_fault_codes.json.
+  - Hosts in config/excluded_hosts.json are skipped before any action.
+
+## New CLI Options
+
+- Full workflow once:
+  - maintenancetool run [--dry-run]
+- Periodic loop (every LOOP_INTERVAL_SEC):
+  - maintenancetool loop [--dry-run]
+- Stage-only (discover → drain → schedule; no health/finalize):
+  - maintenancetool stage [--dry-run]
+- Visibility/reporting (no actions):
+  - maintenancetool report
+- Per-phase helpers (after discovery builds a job for the host):
+  - maintenancetool drain <hostname>
+  - maintenancetool maintenance <hostname>
+  - maintenancetool health <hostname>
+  - maintenancetool finalize <hostname>
+
+Notes:
+- --dry-run never invokes scontrol or OCI scheduling; used to validate approved and excluded lists safely.
+
+## Configuration Updates
+
+- Approved faults (exact match):
+  - config/approved_fault_codes.json (JSON array of fault IDs)
+  - Fallback: APPROVED_FAULT_CODES env var (comma-separated) if file is missing/empty.
+- Excluded hosts:
+  - config/excluded_hosts.json (JSON array of hostnames to skip for any action)
+- Event log path:
+  - EVENTS_LOG_FILE env var (default: logs/events.jsonl)
+- Other relevant env:
+  - DAILY_SCHEDULE_CAP (default: 10)
+  - LOOP_INTERVAL_SEC (default: 900)
+  - MAX_WORKERS (default: 8)
+  - LOG_LEVEL, LOG_FILE
+
+Matching behavior:
+- Discovery collects raw fault_ids; only exact matches against approved list are actioned.
+- Excluded hosts are filtered out before any drain/schedule.
+
+## JSONL Event Audit Examples
+
+- Drain requested and completion:
+  {"ts":"2025-09-06T01:02:03Z","phase":"drain","action":"requested","host":"GPU-332","reason":"HPCRDMA-0002-02"}
+  {"ts":"2025-09-06T01:02:45Z","phase":"drain","action":"drained_empty","host":"GPU-332"}
+
+- Maintenance scheduling lifecycle:
+  {"ts":"2025-09-06T01:03:00Z","phase":"maintenance","action":"schedule_request","host":"GPU-332","event_id":"ocid1...","window_start":"2025-09-06T01:08:00Z"}
+  {"ts":"2025-09-06T01:03:01Z","phase":"maintenance","action":"schedule_accepted","host":"GPU-332","event_id":"ocid1...","work_request":"ocid1.workrequest..."}
+  {"ts":"2025-09-06T12:40:00Z","phase":"maintenance","action":"event_complete","host":"GPU-332","event_id":"ocid1..."}
+
+- Health (placeholder implementation for now):
+  {"ts":"2025-09-06T12:41:00Z","phase":"health","action":"pass","host":"GPU-332"}
+
+## Post-Maintenance TODOs (Planned)
+
+Before automatically resuming nodes, implement:
+- SSH readiness checks with retry/backoff.
+- Log inspection for error signatures (configurable per fault type).
+- Active validation tests mapped by fault type, for example:
+  - GPU: DCGM diagnostics, ECC checks, PCIe link width/speed validation.
+  - Networking: single-node NCCL/NiCOL, fabric ping, link error counters.
+  - Compute: HPL/ROCm micro-benchmark sanity.
+- Outcome handling:
+  - PASS: update Slurm reason and RESUME.
+  - FAIL: keep drained with reason; raise ticket/alert.
+- JSONL event coverage for each step; MGMT status updates aligned with state.
+
+These items correspond to the “Post-Maintenance Health Checks” and “Triage Results & Update Slurm” phases and will replace the current placeholder health logic.

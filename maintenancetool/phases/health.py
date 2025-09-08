@@ -1,10 +1,15 @@
-import time, random, logging
+import logging
 from ..models import MaintenanceJob
+from ..eventlog import log_event
 
 log = logging.getLogger(__name__)
 
 def execute(job: MaintenanceJob) -> None:
-    # Placeholder for OCA diagnostics:
-    time.sleep(5)
-    job.health_ok = random.choice([True, True, True, False])  # 75 % pass
-    log.info("Health %s on %s", "PASS" if job.health_ok else "FAIL", job.hostname)
+    # TODO: Health check placeholder (no-op). Implement active diagnostics + fault recheck.
+    job.health_ok = True  # assume pass until real checks are wired
+    result = "PASS"
+    log.info("[TODO] Health check placeholder: assuming %s on %s", result, job.hostname)
+    try:
+        log_event({"phase": "health", "action": result.lower(), "host": job.hostname})
+    except Exception:
+        pass

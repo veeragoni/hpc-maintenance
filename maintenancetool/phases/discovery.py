@@ -27,7 +27,7 @@ def discover() -> list[MaintenanceJob]:
         for ev_sum in paginated(
                 compute_client.list_instance_maintenance_events,
                 compartment_id=comp):
-            if ev_sum.lifecycle_state not in ("SCHEDULED", "STARTED", "PROCESSING"):
+            if ev_sum.lifecycle_state not in ("SCHEDULED"):
                 continue
             event_response = compute_client.get_instance_maintenance_event(ev_sum.id)
             if event_response is None:

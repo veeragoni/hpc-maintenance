@@ -1,7 +1,7 @@
 import argparse, logging
 from oci.core.models import InstanceMaintenanceEvent
 from .logging_util import setup_logging
-from .orchestrator import run_once, run_loop
+from .orchestrator import run_once, run_loop, run_stage, run_catchup
 from . import __version__
 from .phases import discovery, drain, maintenance, health, finalize
 from .models import MaintenanceJob
@@ -18,11 +18,18 @@ def main() -> None:
 
     # Subcommand for running the full maintenance workflow once
     parser_run = subparsers.add_parser("run", help="Run the full maintenance workflow once")
-    parser_run.set_defaults(func=lambda args: run_once())
+    parser_run.add_argument("--dry-run", "-n", action="store_true", help="Do not make changes; show what would be done")
+    parser_run.set_defaults(func=lambda args: run_once(dry_run=args.dry_run))
 
     # Subcommand for running the periodic maintenance loop
     parser_loop = subparsers.add_parser("loop", help="Run the periodic maintenance loop (15m interval by default)")
-    parser_loop.set_defaults(func=lambda args: run_loop())
+    parser_loop.add_argument("--dry-run", "-n", action="store_true", help="Do not make changes; show what would be done each iteration")
+    parser_loop.set_defaults(func=lambda args: run_loop(dry_run=args.dry_run))
+
+    # Subcommand for staging only (discover -> drain -> schedule)
+    parser_stage = subparsers.add_parser("stage", help="Discover -> drain -> schedule (if event state=SCHEDULED); skips health/finalize")
+    parser_stage.add_argument("--dry-run", "-n", action="store_true", help="Do not make changes; show what would be done")
+    parser_stage.set_defaults(func=lambda args: run_stage(dry_run=args.dry_run))
 
     # Subcommand for reporting: show raw fault codes and node mapping
     parser_report = subparsers.add_parser("report", help="Print discovered fault codes and node mapping")
@@ -51,6 +58,14 @@ def main() -> None:
     parser_finalize = subparsers.add_parser("finalize", help="Run finalize phase")
     parser_finalize.add_argument("hostname", help="Hostname to finalize")
     parser_finalize.set_defaults(func=lambda args: _exec_phase_with_discovery(args.hostname, finalize.execute))
+
+    # Subcommand for one-shot catch-up (no drain/schedule)
+    # - SUCCEEDED/COMPLETED: health -> finalize and set MGMT to "running"
+    # - IN_PROGRESS/PROCESSING: set MGMT to "NTR scheduled" + reconfigure compute
+    parser_catchup = subparsers.add_parser("catchup", help="One-shot reconciliation for already-triggered maintenance (no drain/schedule)")
+    parser_catchup.add_argument("--host", help="Limit to a specific hostname", default=None)
+    parser_catchup.add_argument("--dry-run", "-n", action="store_true", help="Preview actions without changing Slurm/OCI/MGMT")
+    parser_catchup.set_defaults(func=lambda args: run_catchup(dry_run=args.dry_run, host=args.host))
 
     args = parser.parse_args()
 
