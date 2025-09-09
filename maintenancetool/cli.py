@@ -5,7 +5,7 @@ from .orchestrator import run_once, run_loop, run_stage, run_catchup
 from . import __version__
 from .phases import discovery, drain, maintenance, health, finalize
 from .models import MaintenanceJob
-from .reporting import print_faults_summary
+from .reporting import print_events_table
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -31,9 +31,11 @@ def main() -> None:
     parser_stage.add_argument("--dry-run", "-n", action="store_true", help="Do not make changes; show what would be done")
     parser_stage.set_defaults(func=lambda args: run_stage(dry_run=args.dry_run))
 
-    # Subcommand for reporting: show raw fault codes and node mapping
-    parser_report = subparsers.add_parser("report", help="Print discovered fault codes and node mapping")
-    parser_report.set_defaults(func=lambda args: print_faults_summary())
+    # Subcommand for reporting: show maintenance events table
+    parser_report = subparsers.add_parser("report", help="Show all instance maintenance events (table)")
+    parser_report.add_argument("--include-canceled", action="store_true", help="Include CANCELED events in the table")
+    parser_report.add_argument("-x", "--exclude", action="append", default=None, help="Exclude events in the given state (can be repeated)")
+    parser_report.set_defaults(func=lambda args: print_events_table(exclude=args.exclude, include_canceled=args.include_canceled))
 
     # Subcommand for discovery phase
     parser_discovery = subparsers.add_parser("discover", help="Run discovery phase")
