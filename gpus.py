@@ -30,7 +30,7 @@ def main():
     assert isinstance(identity_client, oci.identity.IdentityClient)
 
     # First, we list all compartments in the tenancy
-    compartments = list_compartments(identity_client, config.tenancy_ocid)
+    compartments = list_compartments(identity_client, config.TENANCY_OCID)
     # Next, we retrieve all MaintenanceEvents for all compartments we found above
     all_events = list_all_maintenance_events(compute_client, compartments)
     
@@ -105,14 +105,14 @@ def schedule_maintenance_immediately(compute_client, maintenance_event):
     assert isinstance(compute_client, oci.core.ComputeClient)
 
     tags = maintenance_event.freeform_tags
-    tags[config.processed_tag] = True
+    tags[config.PROCESSED_TAG] = True
 
     schedule_time = datetime.datetime.now()
     update = oci.core.models.UpdateInstanceMaintenanceEventDetails(
         time_window_start=schedule_time.isoformat(), freeform_tags=tags
     )
     response = compute_client.update_instance_maintenance_event(maintenance_event.id, update)
-    work_request_id = response.headers.get('opc-work-request-id')
+    work_request_id = (getattr(response, 'headers', {}) or {}).get('opc-work-request-id')
 
     workrequests_client = make_workrequests_client()
     assert isinstance(workrequests_client, oci.work_requests.WorkRequestClient)

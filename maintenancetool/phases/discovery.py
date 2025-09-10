@@ -234,6 +234,7 @@ def _print_jobs_table(jobs: list[MaintenanceJob]) -> None:
         {"header": "Slurm State", "key": "slurm_state", "no_wrap": True},
         {"header": "Time in State", "key": "time_in_state", "no_wrap": True},
         {"header": "Created/Started", "key": "created", "no_wrap": True},
+        {"header": "Fault IDs", "key": "fault_ids"},
         {"header": "Instance OCID", "key": "instance_ocid", "no_wrap": True},
     ]
     style_map = {"SCHEDULED": "cyan"}
@@ -362,6 +363,7 @@ def run_cli(output_json: str | None = None) -> None:
         {"header": "Slurm State", "key": "slurm_state", "no_wrap": True},
         {"header": "Time in State", "key": "time_in_state", "no_wrap": True},
         {"header": "Created/Started", "key": "created", "no_wrap": True},
+        {"header": "Fault IDs", "key": "fault_ids"},
         {"header": "Instance OCID", "key": "instance_ocid", "no_wrap": True},
     ]
     style_map = {

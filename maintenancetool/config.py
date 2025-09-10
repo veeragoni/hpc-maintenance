@@ -1,27 +1,64 @@
 import os
-import re
 import json
 from pathlib import Path
+from typing import List, Set
 
-TENANCY_OCID     = os.getenv("OCI_TENANCY_OCID")      # optional override
-PROCESSED_TAG    = os.getenv("PROCESSED_TAG", "maintenance_processed")
-MAX_WORKERS      = int(os.getenv("MAX_WORKERS", 8))
+def _load_env_files() -> None:
+    """
+    Load environment variables from .env (and .env.local if present).
+    - .env is the primary runtime file (checked in .gitignore)
+    - .env.local is a template/example; also read if present to ease local dev
+    Values already present in the process environment are not overridden.
+    Supported format: KEY=VALUE with optional quotes; lines starting with '#' are ignored.
+    """
+    for fname in (".env", ".env.local"):
+        p = Path(fname)
+        if not p.exists():
+            continue
+        try:
+            for raw in p.read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[7:].strip()
+                if "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+        except Exception:
+            # Fail-closed: ignore malformed lines but continue loading others
+            pass
 
-LOG_LEVEL        = os.getenv("LOG_LEVEL", "INFO").upper()
-LOG_FILE         = Path(os.getenv("LOG_FILE", "maint_orchestrator.log"))
 
-DRAIN_POLL_SEC   = int(os.getenv("DRAIN_POLL_SEC", 30))
-MAINT_POLL_SEC   = int(os.getenv("MAINT_POLL_SEC", 86400))  # 24 hours
+# Load .env/.env.local before reading configuration values
+_load_env_files()
+
+# Core configuration (env-driven; no secrets in source)
+# Accept both OCI_TENANCY_OCID and TENANCY_OCID for convenience; provide an obvious dummy default.
+TENANCY_OCID = os.getenv("OCI_TENANCY_OCID") or os.getenv("TENANCY_OCID") or "ocid1.compartment.DUMMY"
+
+PROCESSED_TAG = os.getenv("PROCESSED_TAG", "maintenance_processed")
+MAX_WORKERS = int(os.getenv("MAX_WORKERS", "8"))
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_FILE = Path(os.getenv("LOG_FILE", "maint_orchestrator.log"))
+
+DRAIN_POLL_SEC = int(os.getenv("DRAIN_POLL_SEC", "30"))
+MAINT_POLL_SEC = int(os.getenv("MAINT_POLL_SEC", "86400"))  # 24 hours
 
 # Paths for external configuration files
 APPROVED_FAULT_CODES_FILE = Path(os.getenv("APPROVED_FAULT_CODES_FILE", "config/approved_fault_codes.json"))
 EXCLUDED_HOSTS_FILE = Path(os.getenv("EXCLUDED_HOSTS_FILE", "config/excluded_hosts.json"))
 EVENTS_LOG_FILE = Path(os.getenv("EVENTS_LOG_FILE", "logs/events.jsonl"))
 
-def _read_json_list(path: Path) -> list[str]:
+def _read_json_list(path: Path) -> List[str]:
     try:
         if path.exists():
-            with path.open() as f:
+            with path.open(encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, list):
                     return [str(x) for x in data]
@@ -29,34 +66,20 @@ def _read_json_list(path: Path) -> list[str]:
         pass
     return []
 
-SLURM_DRAIN_REASON = os.getenv("SLURM_DRAIN_REASON", "OCiMaintenance")
-SLURM_DRAIN_COMMAND = f"sudo scontrol update NodeName=%s Reason='{SLURM_DRAIN_REASON}' State=DRAIN"
-SLURM_RESUME_COMMAND = "sudo scontrol update NodeName=%s State=RESUME"
 
-tenancy_ocid = 'ocid1.compartment.oc1..aaaaaaaan5ouwmczcchigfas4xuzw5mh5xpqhnymull6y4g7gxc73wmgammq'
-TENANCY_OCID = tenancy_ocid
-# if this is set, attempt to use the local instance principal for auth
-use_instance_principal = True
-region = "us-ashburn-1"
+# OCI auth/region
+region = os.getenv("REGION", "us-ashburn-1")
 
 # NTR configuration
-APPROVED_FAULT_CODES_ENV = os.getenv("APPROVED_FAULT_CODES", "HPCRDMA-0002-02") #HPCGPU-0001-01
-APPROVED_FAULT_CODES = {c.strip() for c in APPROVED_FAULT_CODES_ENV.split(",") if c.strip()}
+APPROVED_FAULT_CODES_ENV = os.getenv("APPROVED_FAULT_CODES", "")
+APPROVED_FAULT_CODES: Set[str] = {c.strip() for c in APPROVED_FAULT_CODES_ENV.split(",") if c.strip()}
 
-def normalize_fault_code(code: str) -> str:
-    """
-    Normalize a fault code for matching:
-    - Uppercase
-    - Remove all non-alphanumeric characters (drop spaces, dashes, underscores, etc.)
-    """
-    return re.sub(r"[^A-Z0-9]", "", (code or "").upper())
 
 # Map normalized -> canonical (as provided in config)
-APPROVED_FAULT_CODES_NORM = {normalize_fault_code(c): c for c in APPROVED_FAULT_CODES}
 
 # Guardrails and loop settings
-DAILY_SCHEDULE_CAP = int(os.getenv("DAILY_SCHEDULE_CAP", 10))
-LOOP_INTERVAL_SEC  = int(os.getenv("LOOP_INTERVAL_SEC", 900))  # 15 minutes
+DAILY_SCHEDULE_CAP = int(os.getenv("DAILY_SCHEDULE_CAP", "10"))
+LOOP_INTERVAL_SEC = int(os.getenv("LOOP_INTERVAL_SEC", "900"))  # 15 minutes
 
 # Exclusions: global list of hostnames excluded from automation (drain/schedule/etc.)
 # Loaded from EXCLUDED_HOSTS_FILE (JSON array of hostnames). Example:

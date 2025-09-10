@@ -347,6 +347,7 @@ def print_events_table(exclude: list[str] | None = None, include_canceled: bool 
         table.add_column("Slurm State", no_wrap=True)
         table.add_column("Time in State", no_wrap=True)
         table.add_column("Created/Started", no_wrap=True)
+        table.add_column("Fault IDs")
         table.add_column("Instance OCID", no_wrap=True)
 
         style_map = {
@@ -370,6 +371,7 @@ def print_events_table(exclude: list[str] | None = None, include_canceled: bool 
                 r.get("slurm_state") or "",
                 r.get("time_in_state") or "—",
                 r.get("created") or "—",
+                ", ".join(r.get("fault_ids") or []) if r.get("fault_ids") else "(none)",
                 r.get("instance_ocid") or "",
             )
 
@@ -387,5 +389,6 @@ def print_events_table(exclude: list[str] | None = None, include_canceled: bool 
                 f"slurm={r.get('slurm_state') or ''} | "
                 f"state_time={r.get('time_in_state') or '—'} | "
                 f"created={r.get('created') or '—'} | "
+                f"fault_ids={', '.join(r.get('fault_ids') or []) if r.get('fault_ids') else '(none)'} | "
                 f"inst={r.get('instance_ocid') or ''}"
             )

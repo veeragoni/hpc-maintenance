@@ -129,7 +129,26 @@ To run the maintenance tool, execute the CLI command provided in `cli.py`. The t
 
 ## Configuration
 
-The tool's configuration is managed through the `config.py` module. Key configurations include the maximum number of worker threads and specific tags used for tracking processed events.
+Configuration is read from environment variables loaded at runtime by `maintenancetool.config`. A template `.env.local` is provided; copy it to `.env` and edit values. The `.env` file is gitignored to avoid committing secrets.
+
+Setup:
+- Copy the template: `cp .env.local .env`
+- Edit `.env` and set at minimum:
+  - `OCI_TENANCY_OCID=ocid1.tenancy.oc1..your_tenancy_ocid`
+  - `REGION=us-ashburn-1` (or your region)
+- Optional variables:
+  - `LOG_LEVEL`, `LOG_FILE`
+  - `DRAIN_POLL_SEC`, `MAINT_POLL_SEC`
+  - `DAILY_SCHEDULE_CAP`, `LOOP_INTERVAL_SEC`
+  - `PROCESSED_TAG`
+  - `EVENTS_LOG_FILE`
+  - `APPROVED_FAULT_CODES` (comma-separated fallback) or use `config/approved_fault_codes.json`
+  - `APPROVED_FAULT_CODES_FILE` (defaults to `config/approved_fault_codes.json`)
+  - `EXCLUDED_HOSTS_FILE` (defaults to `config/excluded_hosts.json`)
+
+Behavior:
+- `.env` is loaded automatically at import time; variables present in the OS environment take precedence.
+- Approved and excluded host lists are read from JSON files under `config/` by default, with environment fallbacks.
 
 ## Dependencies
 

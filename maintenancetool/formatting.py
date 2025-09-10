@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import shutil, subprocess
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, cast
 
 # Lightweight, reusable formatting utilities for tables and JSON output.
@@ -38,9 +39,24 @@ def print_json_data(data: Any, output: Optional[str] = None) -> None:
     """
     target_stdout = output is None or output == "-" or output == ""
     if target_stdout:
-        json.dump(data, sys.stdout, indent=2, sort_keys=False, default=str)
-        sys.stdout.write("\n")
-        sys.stdout.flush()
+        # If jq is available, pipe JSON through jq for pretty/colorized output; otherwise fallback to Python pretty-print.
+        try:
+            if shutil.which("jq"):
+                json_str = json.dumps(data, indent=2, sort_keys=False, default=str)
+                jq_cmd = ["jq", "."]
+                # Use colorized output when writing to a TTY
+                try:
+                    if sys.stdout.isatty():
+                        jq_cmd.insert(1, "-C")
+                except Exception:
+                    pass
+                subprocess.run(jq_cmd, input=json_str, text=True, check=False)
+            else:
+                raise RuntimeError("jq not found")
+        except Exception:
+            json.dump(data, sys.stdout, indent=2, sort_keys=False, default=str)
+            sys.stdout.write("\n")
+            sys.stdout.flush()
     else:
         path = cast(str, output)
         with open(path, "w", encoding="utf-8") as f:

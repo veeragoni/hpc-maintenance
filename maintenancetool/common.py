@@ -8,7 +8,7 @@ from oci.core import ComputeClient
 from oci.identity import IdentityClient
 from oci.work_requests import WorkRequestClient
 import oci
-from .config import use_instance_principal, region
+from .config import region
 
 REPAIR_KEY = 'repairDetails'
 FAULT_KEY = 'faultDetails'
