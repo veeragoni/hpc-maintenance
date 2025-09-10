@@ -1,8 +1,19 @@
-# HPC Maintenance Tool
+# Felix — OCI + Slurm Maintenance Orchestrator
 
 ## Overview
 
-The HPC Maintenance Tool is designed to manage and orchestrate maintenance jobs for High-Performance Computing (HPC) systems. It interacts with Oracle Cloud Infrastructure (OCI) to discover maintenance events, process them through various phases, and ensure the health and availability of HPC nodes.
+Felix orchestrates OCI instance maintenance events for HPC clusters integrated with Slurm. It discovers maintenance events across OCI compartments, maps events to Slurm nodes, safely drains nodes, schedules maintenance when allowed, monitors progress, performs post-maintenance health checks, and finalizes node state — with operator guardrails and clear visibility.
+
+## Highlights
+
+- Read-only discovery with rich table/JSON output
+- Full workflow runner (discover → drain → schedule → health → finalize)
+- Stage-only path (discover → drain → schedule; skips health/finalize)
+- Periodic loop mode (continuous operations with interval control)
+- Exact fault-code gating and excluded host list
+- Dry-run mode for safe preview of actions
+- JSONL audit log of key transitions
+- Config via .env and JSON files
 
 ## High-Level Workflow
 
@@ -10,13 +21,13 @@ The maintenance process follows a structured workflow that can be broken down in
 
 ```mermaid
 graph LR
-    A[Discovery Loop] -- Maintenance Events --> B[Draining Phase]
+    A[Discovery Loop] -->|Maintenance Events| B[Draining Phase]
     B --> C[Schedule Maintenance]
     C --> D[Maintenance Polling Loop]
     D --> E[Post-Maintenance Health Checks]
     E --> F[Triage Results & Update Slurm]
     F --> G[Clean-up & Book-keeping]
-    G -- Loop Back --> A
+    G -->|Loop Back| A
 ```
 
 ## Detailed Workflow Phases
@@ -27,9 +38,11 @@ The discovery loop runs every ~15 minutes and performs the following steps:
 
 ```mermaid
 graph LR
-    A[Enumerate Compartments] --> B[Pull New Maintenance Events]
-    B --> C[Map Event to Host and GPUs]
-    C -- Maintenance Jobs --> D[Return Jobs]
+    A[Enumerate Compartments] --> B[Pull Instance Maintenance Events]
+    B --> C[Resolve Host Map via MGMT - nodes list, JSON format]
+    C --> D[Filter: Approved Fault Codes / Excluded Hosts]
+    D --> E[Build Jobs - SCHEDULED only]
+    E -->|Jobs| F[Return to Orchestrator]
 ```
 
 1. Enumerate compartments using `list_compartments()`
@@ -42,8 +55,9 @@ The draining phase prepares the node for maintenance:
 
 ```mermaid
 graph LR
-    A[Drain Node using scontrol] --> B[Poll until Node State is DRAIN]
-    B -- Node in DRAIN State --> C[Proceed to Maintenance]
+    A[Drain Node using scontrol] --> B[Set Slurm Reason - fault summary]
+    B --> C[Poll until Node State is DRAIN]
+    C -->|DRAIN| D[Proceed to Maintenance]
 ```
 
 1. Drain the node using `scontrol update NODENAME=<host> STATE=DRAIN`
@@ -55,8 +69,10 @@ Trigger the maintenance event using the OCI API:
 
 ```mermaid
 graph LR
-    A[Prepare UpdateInstanceMaintenanceEventDetails] --> B[Call update_instance_maintenance_event API]
-    B --> C[Track Work Request]
+
+    A[Prepare UpdateInstanceMaintenanceEventDetails]
+    A --> B[Call update_instance_maintenance_event - if state allows]
+    B --> C[Wait for Work Request terminal state]
 ```
 
 1. Prepare `UpdateInstanceMaintenanceEventDetails` with `time_window_start` and `freeform_tags`
@@ -69,9 +85,12 @@ Poll until the maintenance event is completed:
 
 ```mermaid
 graph LR
-    A[Get Instance Maintenance Event] --> B{Is lifecycle_state SUCCEEDED or COMPLETED?}
-    B -- Yes --> C[Proceed to Health Checks]
-    B -- No --> A
+    A[Get Instance Maintenance Event] --> B{State}
+    B -->|SUCCEEDED/COMPLETED/FAILED/CANCELED| C[Proceed to Health Checks]
+    B -->|PROCESSING/STARTED| D[Continue waiting/backoff]
+    B -->|SCHEDULED| E[Defer - not started]
+    D --> A
+    E --> A
 ```
 
 1. Continue calling `get_instance_maintenance_event(event.id)` until `lifecycle_state` is SUCCEEDED or COMPLETED
@@ -83,10 +102,10 @@ Verify the health of the node after maintenance:
 
 ```mermaid
 graph LR
-    A[Wait for Node to Boot and Re-join Network] --> B[Run OCA Plugin or Custom GPU Diagnostics]
+    A[Wait for Node to Boot and Re-join Network] --> B[Run Diagnostics - placeholder]
     B --> C{Health Check Result}
-    C -- PASS --> D[Update Slurm State to RESUME]
-    C -- FAIL --> E[Triage Failure]
+    C -->|PASS| D[Update Slurm State to RESUME]
+    C -->|FAIL| E[Triage Failure - Keep DRAIN/NTR]
 ```
 
 1. Wait for the node to boot and re-join the network (optional ping/SSH check)
@@ -99,8 +118,8 @@ Update Slurm state based on health check results:
 
 ```mermaid
 graph LR
-    A{Health Check Result} -- PASS --> B[Update Slurm State to RESUME]
-    A -- FAIL --> C[Tag Slurm State DRAIN,NTR or DOWN,FAIL]
+    A{Health Check Result} -->|PASS| B[Update Slurm State to RESUME]
+    A -->|FAIL| C[Tag Slurm State DRAIN,NTR or DOWN,FAIL]
     C --> D[Optional: Terminate Instance or Open Internal Ticket]
 ```
 
@@ -113,7 +132,8 @@ Persist actions and remove processed tag:
 
 ```mermaid
 graph LR
-    A[Persist Actions in CMDB/Quip Sheet] --> B[Remove Processed Tag from Event List]
+    A[JSONL Audit - logs/events.jsonl] --> B[MGMT Status Updates]
+    B --> C[Optional: Remove Processed Tag]
 ```
 
 1. Persist actions in CMDB or Quip sheet (node, event_id, outcome)
@@ -172,7 +192,7 @@ The project dependencies are listed in `requirements.txt`. Ensure you have the n
   - Approved fault codes are matched exactly from config/approved_fault_codes.json.
   - Hosts in config/excluded_hosts.json are skipped before any action.
 
-## New CLI Options
+## CLI Options
 
 - Full workflow once:
   - felix run [--dry-run]
@@ -182,7 +202,7 @@ The project dependencies are listed in `requirements.txt`. Ensure you have the n
   - felix stage [--dry-run]
 - Visibility/reporting (no actions):
   - felix report
-- Per-phase helpers (after discovery builds a job for the host):
+- Per-phase helpers:
   - felix drain <hostname>
   - felix maintenance <hostname>
   - felix health <hostname>
