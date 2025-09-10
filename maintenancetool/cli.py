@@ -35,11 +35,15 @@ def main() -> None:
     parser_report = subparsers.add_parser("report", help="Show all instance maintenance events (table)")
     parser_report.add_argument("--include-canceled", action="store_true", help="Include CANCELED events in the table")
     parser_report.add_argument("-x", "--exclude", action="append", default=None, help="Exclude events in the given state (can be repeated)")
-    parser_report.set_defaults(func=lambda args: print_events_table(exclude=args.exclude, include_canceled=args.include_canceled))
+    parser_report.add_argument("--json", nargs="?", const="-", metavar="FILE", help="Output JSON to stdout (no FILE) or write to FILE; skips table")
+    parser_report.set_defaults(func=lambda args: print_events_table(exclude=args.exclude, include_canceled=args.include_canceled, output_json=args.json))
 
     # Subcommand for discovery phase
-    parser_discovery = subparsers.add_parser("discover", help="Run discovery phase")
-    parser_discovery.set_defaults(func=lambda args: discovery.discover())
+    # Reports SCHEDULED events only; read-only (no changes applied)
+    # By default shows a Rich table; --json FILE writes full JSON and skips table output
+    parser_discovery = subparsers.add_parser("discover", help="Run discovery phase (reports SCHEDULED; no changes)")
+    parser_discovery.add_argument("--json", nargs="?", const="-", metavar="FILE", help="Output JSON to stdout (no FILE) or write to FILE; skips table")
+    parser_discovery.set_defaults(func=lambda args: discovery.run_cli(output_json=args.json))
 
     # Subcommand for drain phase
     parser_drain = subparsers.add_parser("drain", help="Run drain phase")

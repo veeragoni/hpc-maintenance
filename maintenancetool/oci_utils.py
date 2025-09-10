@@ -8,6 +8,7 @@ from .utils import paginated
 from typing import Optional, List, Dict
 import subprocess
 import json
+import os
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +38,10 @@ def trigger_update(
     defined_tags: Optional[dict] = None,
     time_window_start: Optional[str] = None,
 ) -> Optional[str]:
+    # Read-only safety guard: if set (e.g., by discovery), never call update API
+    if os.getenv("MAINT_READONLY", "").lower() in ("1", "true", "yes"):
+        log.info("MAINT_READONLY is set; skipping update_instance_maintenance_event for %s", event_id)
+        return None
     log.info(f"trigger_update: event_id type={type(event_id)} value={event_id}")
     log.info(f"trigger_update: freeform_tags type={type(freeform_tags)} value={freeform_tags}")
     log.info(f"trigger_update: defined_tags type={type(defined_tags)} value={defined_tags}")
@@ -76,23 +81,27 @@ def trigger_update(
 def _wait_work_request(wr_id: str) -> None:
     try:
         lifecycle_states = ["SUCCEEDED", "FAILED", "CANCELED", "COMPLETED"]
-        # Only supply evaluate_response, and no property/attribute args.
-        # Import sentinel for proper check
         from oci.util import WAIT_RESOURCE_NOT_FOUND
 
-        # Use property/state pattern per OCI docs for work requests
-        waiter_result = oci.wait_until(
+        # Wait for work request to reach a terminal status
+        wr_call = wr_client.get_work_request(wr_id)
+        wr_resp = oci.wait_until(
             wr_client,
-            wr_client.get_work_request(wr_id),
+            wr_call,
             property="status",
             state=lifecycle_states
         )
-        if waiter_result is WAIT_RESOURCE_NOT_FOUND:
+
+        # Some SDKs may return a sentinel object; avoid attribute access in that case
+        if wr_resp is WAIT_RESOURCE_NOT_FOUND or getattr(wr_resp, "__class__", None).__name__ == "Sentinel":
             log.error(f"Work request {wr_id} not found - reached WAIT_RESOURCE_NOT_FOUND sentinel.")
-        elif hasattr(waiter_result, "data"):
-            log.info(f"Work request {wr_id} reached a terminal state: {waiter_result.data.status}")
+            return
+
+        status = getattr(getattr(wr_resp, "data", None), "status", None)
+        if status:
+            log.info(f"Work request {wr_id} reached a terminal state: {status}")
         else:
-            log.info(f"Work request {wr_id} waiter result has unexpected type: {type(waiter_result)}")
+            log.info(f"Work request {wr_id} waiter result has unexpected type: {type(wr_resp)}")
     except Exception as e:
         log.error(f"Error waiting for work request: {e}")
 

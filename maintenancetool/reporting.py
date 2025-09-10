@@ -3,10 +3,14 @@ import json
 import time
 import itertools, random
 from typing import Dict, List
+from datetime import datetime, timezone
 from .phases import discovery
 from .config import get_approved_faults
 from .oci_utils import compute_client, list_compartments
 from .utils import paginated, run_cmd
+from .slrum_utils import slurm_node_status_map
+from .formatting import print_json_data
+from .events_common import build_event_rows, STATE_ORDER as COMMON_STATE_ORDER
 
 log = logging.getLogger(__name__)
 
@@ -63,20 +67,17 @@ SPIN_MSGS = [
 # How long each loading message stays visible (seconds)
 MESSAGE_CYCLE_SECONDS = 1.6
 
+# SYNC NOTE:
+# The column order, time-in-state logic, Created/Started formatting, and coloring in this file
+# are intended to stay in lockstep with maintenancetool/phases/discovery.py.
+# When you change one, mirror in the other or extract shared helpers to avoid drift.
+
 # Event discovery and table rendering (reusable)
 # State ordering priority for table sorting.
 # Lower numbers sort earlier in the table.
 # IMPORTANT: SCHEDULED must appear first; PROCESSING/IN_PROGRESS/STARTED next; SUCCEEDED next; FAILED/CANCELED last.
 # Do not change without stakeholder approval to avoid reshuffling in downstream UIs.
-_STATE_ORDER = {
-    "SCHEDULED": 1,
-    "PROCESSING": 2,
-    "IN_PROGRESS": 2,
-    "STARTED": 2,
-    "SUCCEEDED": 3,
-    "FAILED": 5,
-    "CANCELED": 5,
-}
+_STATE_ORDER = COMMON_STATE_ORDER
 # Default filter for the events table (maintain this set to change defaults)
 DEFAULT_STATE_EXCLUDE = {"CANCELED"}
 
@@ -96,6 +97,77 @@ def _mgmt_host_map() -> Dict[str, str]:
         return {}
     return {n.get("ocid"): n.get("hostname") for n in data if n.get("ocid") and n.get("hostname")}
 
+def _as_aware(dt):
+    if dt is None:
+        return None
+    # Assume SDK provides tz-aware UTC; if naive, coerce to UTC
+    if getattr(dt, "tzinfo", None) is None:
+        try:
+            return dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            return dt
+    return dt
+
+def _seconds_between(start, end) -> float | None:
+    if start is None or end is None:
+        return None
+    try:
+        return max(0.0, (end - start).total_seconds())
+    except Exception:
+        return None
+
+def _fmt_duration(seconds: float | None) -> str:
+    if seconds is None:
+        return "—"
+    sec = int(round(seconds))
+    # If >= 24 hours, show days and hours only (e.g., "58 d 10 h")
+    if sec >= 86400:
+        d = sec // 86400
+        h = (sec % 86400) // 3600
+        return f"{d} d {h} h"
+    # Otherwise show hours/minutes/seconds
+    h = sec // 3600
+    m = (sec % 3600) // 60
+    s = sec % 60
+    parts = []
+    if h > 0:
+        parts.append(f"{h} h")
+        parts.append(f"{m:02d} m")
+    else:
+        if m > 0:
+            parts.append(f"{m} m")
+        parts.append(f"{s:02d} s")
+    return " ".join(parts)
+
+def _fmt_ts(dt):
+    dt = _as_aware(dt)
+    if dt is None:
+        return "—"
+    try:
+        ts = dt.astimezone(timezone.utc)
+        month = ts.strftime("%b")
+        d = ts.day
+        if 10 <= (d % 100) <= 20:
+            suffix = "th"
+        else:
+            suffix = {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
+        tstr = ts.strftime("%I:%M %p").lstrip("0").lower()
+        return f"{month} {d}{suffix} {ts.year} {tstr} UTC"
+    except Exception:
+        return str(dt)
+
+def _color_event_type(name: str | None) -> str:
+    n = (name or "").upper()
+    if n == "TERMINATE":
+        return "[red]TERMINATE[/red]"
+    if n == "DOWNTIME_HOST_MAINTENANCE":
+        return "[magenta]DOWNTIME_HOST_MAINTENANCE[/magenta]"
+    return name or ""
+
+def _pick_created_or_started(state_upper: str, ev):
+    dt = getattr(ev, "time_created", None) if state_upper == "SCHEDULED" else (getattr(ev, "time_started", None) or getattr(ev, "time_created", None))
+    return _fmt_ts(dt)
+
 def list_all_events(progress_cb=None) -> list[dict]:
     """
     Return a list of all instance maintenance events across compartments with raw fields.
@@ -104,10 +176,13 @@ def list_all_events(progress_cb=None) -> list[dict]:
       - hostname (resolved via MGMT, or '(unknown)')
       - instance_ocid
       - event_ocid
+      - display_name
       - fault_ids (list[str])
     """
     hmap = _mgmt_host_map()
+    s_map = slurm_node_status_map()
     rows: list[dict] = []
+    now = datetime.now(timezone.utc)
     comp_idx = 0
     event_count = 0
 
@@ -146,12 +221,37 @@ def list_all_events(progress_cb=None) -> list[dict]:
             hostname = hmap.get(ev.instance_id) or "(unknown)"
             raw_state = getattr(ev_sum, "lifecycle_state", None) or getattr(ev, "lifecycle_state", None) or ""
 
+            # Time-aware columns
+            state_upper = (raw_state or "").upper()
+            t_started = _as_aware(getattr(ev, "time_started", None))
+            t_finished = _as_aware(getattr(ev, "time_finished", None))
+            t_sched = _as_aware(getattr(ev, "time_window_start", None)) or _as_aware(getattr(ev, "time_created", None)) or t_started
+
+            # Time in current state
+            if state_upper in ("PROCESSING", "IN_PROGRESS", "STARTED"):
+                tin_state = _seconds_between(t_started, now)
+            elif state_upper == "SCHEDULED":
+                created = _as_aware(getattr(ev, "time_created", None))
+                tin_state = _seconds_between(created, now)
+            elif state_upper in ("SUCCEEDED", "FAILED", "CANCELED"):
+                tin_state = _seconds_between(t_started, t_finished)
+            else:
+                tin_state = _seconds_between(_as_aware(getattr(ev, "time_created", None)), now)
+
+            # Total processing time (wall-clock), shown once terminal
+            total_proc = _seconds_between(t_started, t_finished)
+
             rows.append({
                 "state": raw_state,
                 "hostname": hostname,
+                "slurm_state": (s_map.get(hostname, {}) or {}).get("state", ""),
                 "instance_ocid": ev.instance_id,
                 "event_ocid": ev.id,
+                "display_name": _color_event_type(getattr(ev, "display_name", None)),
                 "fault_ids": fault_ids,
+                "time_in_state": _fmt_duration(tin_state),
+                "created": _pick_created_or_started(state_upper, ev),
+                "total_processing": _fmt_duration(total_proc) if total_proc is not None else "—",
             })
             if progress_cb and (len(rows) % 20 == 0):
                 try:
@@ -160,7 +260,7 @@ def list_all_events(progress_cb=None) -> list[dict]:
                     pass
     return rows
 
-def print_events_table(exclude: list[str] | None = None, include_canceled: bool = False) -> None:
+def print_events_table(exclude: list[str] | None = None, include_canceled: bool = False, output_json: str | None = None) -> None:
     """
     Print a nice table of instance maintenance events grouped by states:
     CANCELED, FAILED, PROCESSING, SCHEDULED, STARTED, SUCCEEDED (raw, unnormalized).
@@ -198,7 +298,7 @@ def print_events_table(exclude: list[str] | None = None, include_canceled: bool 
                         last["t"] = now
                 except Exception:
                     pass
-            rows = list_all_events(progress_cb=_cb)
+            rows = build_event_rows(progress_cb=_cb)
     else:
         # Plain text fallback progress
         texts = [m["text"] for m in SPIN_MSGS] if 'SPIN_MSGS' in globals() else []
@@ -211,7 +311,7 @@ def print_events_table(exclude: list[str] | None = None, include_canceled: bool 
             if now - last["t"] >= MESSAGE_CYCLE_SECONDS:
                 print(next(messages))
                 last["t"] = now
-        rows = list_all_events(progress_cb=_plain_cb)
+        rows = build_event_rows(progress_cb=_plain_cb)
 
     # Apply state filtering
     excluded_states = set(DEFAULT_STATE_EXCLUDE)
@@ -222,12 +322,17 @@ def print_events_table(exclude: list[str] | None = None, include_canceled: bool 
     rows = [r for r in rows if (r.get("state") or "").upper() not in excluded_states]
 
     def _sort_key(r: dict):
-        # Use preferred order if present; unknown states at the end.
-        # Within each state, place hosts with "(unknown)" at the bottom.
+        # Group by hostname first so related events stay adjacent, then by state order.
         state_weight = _STATE_ORDER.get(r.get("state", ""), 999)
         hostname = r.get("hostname") or ""
         unknown_host = 1 if hostname == "(unknown)" else 0
-        return (state_weight, unknown_host, hostname, r.get("instance_ocid") or "")
+        return (unknown_host, hostname, state_weight, r.get("instance_ocid") or "")
+
+    # JSON output path (kept in sync with discovery)
+    if output_json is not None:
+        rows_out = sorted(rows, key=_sort_key)
+        print_json_data(rows_out, output_json)
+        return
 
     if Console and Table:
         console = Console()
@@ -236,10 +341,13 @@ def print_events_table(exclude: list[str] | None = None, include_canceled: bool 
             return
 
         table = Table(title="Instance Maintenance Events", show_lines=False)
-        table.add_column("State", no_wrap=True)
         table.add_column("Hostname", no_wrap=True)
+        table.add_column("Maintenance Event Type")
+        table.add_column("State", no_wrap=True)
+        table.add_column("Slurm State", no_wrap=True)
+        table.add_column("Time in State", no_wrap=True)
+        table.add_column("Created/Started", no_wrap=True)
         table.add_column("Instance OCID", no_wrap=True)
-        table.add_column("Fault IDs")
 
         style_map = {
             "SCHEDULED": "cyan",
@@ -256,10 +364,13 @@ def print_events_table(exclude: list[str] | None = None, include_canceled: bool 
             style = style_map.get(st)
             st_disp = f"[{style}]{st}[/{style}]" if style else st
             table.add_row(
-                st_disp,
                 r.get("hostname") or "",
+                r.get("display_name") or "",
+                st_disp,
+                r.get("slurm_state") or "",
+                r.get("time_in_state") or "—",
+                r.get("created") or "—",
                 r.get("instance_ocid") or "",
-                ", ".join(r.get("fault_ids") or []) if r.get("fault_ids") else "(none)",
             )
 
         console.print(table)
@@ -269,4 +380,12 @@ def print_events_table(exclude: list[str] | None = None, include_canceled: bool 
             print("  (none)")
             return
         for r in sorted(rows, key=_sort_key):
-            print(f"- {r.get('state') or '(unknown)':>10} | {r.get('hostname') or '':<20} | inst={r.get('instance_ocid') or ''} | fault_ids={', '.join(r.get('fault_ids') or []) if r.get('fault_ids') else '(none)'}")
+            print(
+                f"host={r.get('hostname') or ''} | "
+                f"type={r.get('display_name') or ''} | "
+                f"state={r.get('state') or '(unknown)'} | "
+                f"slurm={r.get('slurm_state') or ''} | "
+                f"state_time={r.get('time_in_state') or '—'} | "
+                f"created={r.get('created') or '—'} | "
+                f"inst={r.get('instance_ocid') or ''}"
+            )
