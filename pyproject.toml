@@ -4,14 +4,18 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "maintenancetool"
+name = "felix"
 version = "0.1.0"
 description = "OCI / Slurm maintenance orchestrator"
 authors = [{ name = "SCE", email = "suresh.veeragoni@oracle.com" }]
 readme = "README.md"
-license = { text = "Copyright Oracle." }
+license = "MIT"
 requires-python = ">=3.9"
 dependencies = ["oci"]
 
 [project.scripts]
-maintenancetool = "maintenancetool.cli:main"
+felix = "felix.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["felix*"]
+exclude = ["config*", "logs*"]

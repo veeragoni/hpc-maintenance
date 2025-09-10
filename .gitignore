@@ -147,5 +147,5 @@ venv/
 .DS_Store
 
 # Project specific directories
-hpc-maintenance/maintenancetool/__pycache__
-hpc-maintenance/maintenancetool/.pytest_cache
+hpc-maintenance/felix/__pycache__
+hpc-maintenance/felix/.pytest_cache

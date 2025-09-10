@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 # SYNC NOTE:
 # The column order, state coloring, time-in-state rules, and Created/Started formatting
-# must remain consistent with maintenancetool/reporting.py. If you modify one, mirror the change
+# must remain consistent with felix/reporting.py. If you modify one, mirror the change
 # in the other or extract shared helpers in formatting/common modules to avoid drift.
 
 def _host_map() -> dict[str, str]:

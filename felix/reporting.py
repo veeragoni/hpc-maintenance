@@ -69,7 +69,7 @@ MESSAGE_CYCLE_SECONDS = 1.6
 
 # SYNC NOTE:
 # The column order, time-in-state logic, Created/Started formatting, and coloring in this file
-# are intended to stay in lockstep with maintenancetool/phases/discovery.py.
+# are intended to stay in lockstep with felix/phases/discovery.py.
 # When you change one, mirror in the other or extract shared helpers to avoid drift.
 
 # Event discovery and table rendering (reusable)

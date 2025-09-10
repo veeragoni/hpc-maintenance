@@ -1,6 +1,6 @@
 import pytest
-from maintenancetool.oci_utils import list_compartments, list_instance_maintenance_events, get_gpu_ocid_dict, get_gpus_for_ocid
-from maintenancetool.config import TENANCY_OCID
+from felix.oci_utils import list_compartments, list_instance_maintenance_events, get_gpu_ocid_dict, get_gpus_for_ocid
+from felix.config import TENANCY_OCID
 import json
 from unittest.mock import patch
 
@@ -20,7 +20,7 @@ def test_list_instance_maintenance_events_integration():
         print(f"Event ID: {event.id}, Compartment ID: {event.compartment_id}, State: {event.lifecycle_state}")
     assert isinstance(events, list)
 
-@patch('maintenancetool.oci_utils.subprocess.check_output')
+@patch('felix.oci_utils.subprocess.check_output')
 def test_get_gpu_ocid_dict(mock_check_output):
     mock_check_output.return_value = '[{"ocid": "ocid1.instance.oc1.iad.example", "hostname": "GPU1"}]'
     ocids = ['ocid1.instance.oc1.iad.example']

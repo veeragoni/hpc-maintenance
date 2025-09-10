@@ -4,9 +4,9 @@ import datetime
 import oci
 import pprint
 
-import maintenancetool.config as config
-from maintenancetool.common import setup_logging, paginated_api_to_generator, is_workrequest_terminal, get_additional_details
-from maintenancetool.common import make_compute_client, make_identity_client, make_workrequests_client
+import felix.config as config
+from felix.common import setup_logging, paginated_api_to_generator, is_workrequest_terminal, get_additional_details
+from felix.common import make_compute_client, make_identity_client, make_workrequests_client
 import subprocess
 import json
 

@@ -1,4 +1,4 @@
-from maintenancetool.utils import run_cmd
+from felix.utils import run_cmd
 import pytest
 
 def test_run_cmd_success(tmp_path):

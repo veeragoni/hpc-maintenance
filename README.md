@@ -129,7 +129,7 @@ To run the maintenance tool, execute the CLI command provided in `cli.py`. The t
 
 ## Configuration
 
-Configuration is read from environment variables loaded at runtime by `maintenancetool.config`. A template `.env.local` is provided; copy it to `.env` and edit values. The `.env` file is gitignored to avoid committing secrets.
+Configuration is read from environment variables loaded at runtime by `felix.config`. A template `.env.local` is provided; copy it to `.env` and edit values. The `.env` file is gitignored to avoid committing secrets.
 
 Setup:
 - Copy the template: `cp .env.local .env`
@@ -157,7 +157,7 @@ The project dependencies are listed in `requirements.txt`. Ensure you have the n
 ## Current State Additions
 
 - Stage-only workflow:
-  - Command: maintenancetool stage
+  - Command: felix stage
   - Steps: Discover → Drain → Schedule (skips Health and Finalize)
   - Use when you only want to drain and schedule maintenance while we iterate on post-maintenance actions.
 - Dry-run mode:
@@ -175,18 +175,18 @@ The project dependencies are listed in `requirements.txt`. Ensure you have the n
 ## New CLI Options
 
 - Full workflow once:
-  - maintenancetool run [--dry-run]
+  - felix run [--dry-run]
 - Periodic loop (every LOOP_INTERVAL_SEC):
-  - maintenancetool loop [--dry-run]
+  - felix loop [--dry-run]
 - Stage-only (discover → drain → schedule; no health/finalize):
-  - maintenancetool stage [--dry-run]
+  - felix stage [--dry-run]
 - Visibility/reporting (no actions):
-  - maintenancetool report
+  - felix report
 - Per-phase helpers (after discovery builds a job for the host):
-  - maintenancetool drain <hostname>
-  - maintenancetool maintenance <hostname>
-  - maintenancetool health <hostname>
-  - maintenancetool finalize <hostname>
+  - felix drain <hostname>
+  - felix maintenance <hostname>
+  - felix health <hostname>
+  - felix finalize <hostname>
 
 Notes:
 - --dry-run never invokes scontrol or OCI scheduling; used to validate approved and excluded lists safely.

@@ -9,7 +9,7 @@ from .reporting import print_events_table
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="maintenancetool",
+        prog="felix",
         description="Automated OCI + Slurm maintenance orchestrator",
     )
     parser.add_argument("--version", action="version",

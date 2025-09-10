@@ -1,9 +1,9 @@
 """
 tests/test_oci_utils.py
-Unit-tests for maintenancetool.oci_utils
+Unit-tests for felix.oci_utils
 
 These tests do NOT call Oracle Cloud Infrastructure.  They patch the OCI
-SDK clients inside maintenancetool.oci_utils, inject fake data, and verify
+SDK clients inside felix.oci_utils, inject fake data, and verify
 that our wrapper functions behave correctly.
 """
 
@@ -12,11 +12,11 @@ import datetime as dt
 
 import pytest
 
-# Patch oci.config.from_file before importing maintenancetool.oci_utils
+# Patch oci.config.from_file before importing felix.oci_utils
 with patch("oci.config.from_file") as mock_config:
     mock_config.return_value = {"tenancy": "fake_tenancy"}
     # import after monkey-patching ↓
-    MODULE_PATH = "maintenancetool.oci_utils"
+    MODULE_PATH = "felix.oci_utils"
 
 
 # ---------------------------------------------------------------------------
@@ -46,7 +46,7 @@ def test_list_compartments(monkeypatch):
         ]
 
         # now we can import the module
-        from maintenancetool.oci_utils import list_compartments, TENANCY_OCID
+        from felix.oci_utils import list_compartments, TENANCY_OCID
 
         result = list_compartments()
 
@@ -83,8 +83,8 @@ def test_trigger_update_success(_patch_clients):
     fake_wr.get_work_request.return_value = _Obj(data=fake_wr_obj)
 
     # patch oci.wait_until so it doesn't actually sleep
-    with patch("maintenancetool.oci_utils.oci.wait_until") as fake_wait:
-        from maintenancetool.oci_utils import trigger_update
+    with patch("felix.oci_utils.oci.wait_until") as fake_wait:
+        from felix.oci_utils import trigger_update
 
         wr_id = trigger_update(
             event_id="ev123",
@@ -107,7 +107,7 @@ def test_is_event_complete_true(_patch_clients):
         data=_Obj(lifecycle_state="COMPLETED")
     )
 
-    from maintenancetool.oci_utils import is_event_complete
+    from felix.oci_utils import is_event_complete
 
     assert is_event_complete("fake_event")
     fake_compute.get_instance_maintenance_event.assert_called_once_with("fake_event")
@@ -119,6 +119,6 @@ def test_is_event_complete_false(_patch_clients):
         data=_Obj(lifecycle_state="PROCESSING")
     )
 
-    from maintenancetool.oci_utils import is_event_complete
+    from felix.oci_utils import is_event_complete
 
     assert is_event_complete("fake_event") is False
