@@ -84,7 +84,7 @@ def run_once(dry_run: bool = False) -> None:
             state = getattr(j.event, "lifecycle_state", None)
             inst_id = getattr(j.event, "instance_id", None)
             logging.info("[DRY RUN] %s: event=%s instance=%s state=%s fault=%s", j.hostname, j.event.id, inst_id, state, j.approved_fault)
-            logging.info("[DRY RUN] Would DRAIN %s with reason '%s'", j.hostname, j.approved_fault)
+            logging.info("[DRY RUN] Would DRAIN %s with reason '%s'", j.hostname, f"NTR {j.approved_fault}")
             if state == "SCHEDULED":
                 import datetime as dt
                 scheduled_time = (dt.datetime.utcnow() + dt.timedelta(minutes=5)).replace(microsecond=0).isoformat() + "Z"
@@ -135,7 +135,7 @@ def run_stage(dry_run: bool = False) -> None:
             state = getattr(j.event, "lifecycle_state", None)
             inst_id = getattr(j.event, "instance_id", None)
             logging.info("[STAGE][DRY RUN] %s: event=%s instance=%s state=%s fault=%s", j.hostname, j.event.id, inst_id, state, j.approved_fault)
-            logging.info("[STAGE][DRY RUN] Would DRAIN %s with reason '%s'", j.hostname, j.approved_fault)
+            logging.info("[STAGE][DRY RUN] Would DRAIN %s with reason '%s'", j.hostname, f"NTR {j.approved_fault}")
             # In stage dry-run, simulate scheduling even if current state != SCHEDULED
             import datetime as dt
             scheduled_time = (dt.datetime.utcnow() + dt.timedelta(minutes=5)).replace(microsecond=0).isoformat() + "Z"
