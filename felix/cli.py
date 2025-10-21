@@ -43,7 +43,8 @@ def main() -> None:
     # By default shows a Rich table; --json FILE writes full JSON and skips table output
     parser_discovery = subparsers.add_parser("discover", help="Run discovery phase (reports SCHEDULED; no changes)")
     parser_discovery.add_argument("--json", nargs="?", const="-", metavar="FILE", help="Output JSON to stdout (no FILE) or write to FILE; skips table")
-    parser_discovery.set_defaults(func=lambda args: discovery.run_cli(output_json=args.json))
+    parser_discovery.add_argument("--all", action="store_true", help="Show all maintenance states (not just SCHEDULED)")
+    parser_discovery.set_defaults(func=lambda args: discovery.run_cli(output_json=args.json, show_all=args.all))
 
     # Subcommand for drain phase
     parser_drain = subparsers.add_parser("drain", help="Run drain phase")

@@ -241,10 +241,10 @@ def _print_jobs_table(jobs: list[MaintenanceJob]) -> None:
     print_table("Discovery: SCHEDULED Maintenance Events", columns, rows, style_map=style_map, state_key="state")
 
 
-def run_cli(output_json: str | None = None) -> None:
+def run_cli(output_json: str | None = None, show_all: bool = False) -> None:
     """
     CLI entrypoint for discovery:
-    - Runs discovery() to gather SCHEDULED events
+    - Runs discovery() to gather SCHEDULED events (or all events if show_all=True)
     - Displays a concise Rich table of the results (unless --json is supplied)
     - If output_json is provided, writes full JSON model to that file instead of printing a table
     """
@@ -270,81 +270,13 @@ def run_cli(output_json: str | None = None) -> None:
     # Table (interactive) mode
 
     def _build_rows_for_cli():
-        allowed = {"PROCESSING", "SCHEDULED", "STARTED", "SUCCEEDED"}
-        return build_event_rows(filter_states=allowed)
-        for comp in list_compartments():
-            for ev_sum in paginated(
-                    compute_client.list_instance_maintenance_events,
-                    compartment_id=comp):
-                raw_state = getattr(ev_sum, "lifecycle_state", None) or ""
-                if raw_state not in allowed:
-                    continue
-                event_response = compute_client.get_instance_maintenance_event(ev_sum.id)
-                if event_response is None:
-                    continue
-                ev = event_response.data
-                # Skip already-processed events (same as other discovery paths)
-                if getattr(ev, "freeform_tags", {}) and ev.freeform_tags.get(PROCESSED_TAG):
-                    continue
-
-                # Fault IDs extraction
-                additional = getattr(ev, "additional_details", None) or {}
-                fault_details = additional.get("fault_details") or additional.get("faultDetails") or []
-                if isinstance(fault_details, str):
-                    try:
-                        fault_details = json.loads(fault_details)
-                    except Exception:
-                        fault_details = []
-                fault_ids: list[str] = []
-                for d in fault_details:
-                    fid = d.get("fault_id") or d.get("faultId")
-                    if fid:
-                        fault_ids.append(fid)
-
-                host = hmap.get(ev.instance_id) or "(unknown)"
-
-                # Time-aware: time in current state
-                state_upper = raw_state.upper()
-                t_started = _as_aware(getattr(ev, "time_started", None))
-                t_finished = _as_aware(getattr(ev, "time_finished", None))
-                t_sched = _as_aware(getattr(ev, "time_window_start", None)) or _as_aware(getattr(ev, "time_created", None)) or t_started
-
-                if state_upper == "SCHEDULED":
-                    created = _as_aware(getattr(ev, "time_created", None))
-                    tin_state = _seconds_between(created, now)
-                elif state_upper in ("PROCESSING", "IN_PROGRESS", "STARTED"):
-                    tin_state = _seconds_between(t_started, now)
-                elif state_upper in ("SUCCEEDED",):
-                    if t_started and t_finished:
-                        tin_state = _seconds_between(t_started, t_finished)
-                    else:
-                        tin_state = None
-                else:
-                    tin_state = _seconds_between(_as_aware(getattr(ev, "time_created", None)), now)
-
-                sl = (s_map.get(host) or {})
-                rows.append({
-                    "state": raw_state,
-                    "time_in_state": _fmt_duration(tin_state),
-                    "created": _fmt_ts(_pick_created_or_started(ev, state_upper)),
-                    "hostname": host,
-                    "slurm_state": sl.get("state", ""),
-                    "instance_ocid": getattr(ev, "instance_id", "") or "",
-                    "display_name": _color_event_type(getattr(ev, "display_name", None)),
-                    "fault_ids": fault_ids,
-                })
-
-        # Sort/group by hostname (unknown last), then by state within each host, then instance OCID
-        state_rank = {"PROCESSING": 0, "STARTED": 1, "SCHEDULED": 2, "SUCCEEDED": 3}
-        rows.sort(
-            key=lambda r: (
-                1 if (r.get("hostname") == "(unknown)") else 0,
-                r.get("hostname") or "",
-                state_rank.get((r.get("state") or "").upper(), 99),
-                r.get("instance_ocid") or "",
-            )
-        )
-        return rows
+        if show_all:
+            # Show all states
+            return build_event_rows(filter_states=None)
+        else:
+            # Show only SCHEDULED by default
+            allowed = {"SCHEDULED"}
+            return build_event_rows(filter_states=allowed)
 
     rows = run_with_status("Discovering maintenance events…", _build_rows_for_cli)
 
@@ -371,26 +303,39 @@ def run_cli(output_json: str | None = None) -> None:
         "PROCESSING": "bright_yellow",
         "STARTED": "yellow",
         "SUCCEEDED": "green",
+        "FAILED": "red",
+        "CANCELED": "dim",
     }
     # Summary (top): counts per state and read-only note
     try:
         from rich.console import Console
         console = Console()
         c_sched = sum(1 for r in rows if (r.get("state") or "").upper() == "SCHEDULED")
-        c_proc = sum(1 for r in rows if (r.get("state") or "").upper() == "PROCESSING")
-        c_started = sum(1 for r in rows if (r.get("state") or "").upper() == "STARTED")
-        c_succ = sum(1 for r in rows if (r.get("state") or "").upper() == "SUCCEEDED")
         console.print("")
-        console.print(f"[bold]Summary[/bold]: [cyan]SCHEDULED[/cyan]={c_sched}  [bright_yellow]PROCESSING[/bright_yellow]={c_proc}  [yellow]STARTED[/yellow]={c_started}  [green]SUCCEEDED[/green]={c_succ}")
+        if show_all:
+            c_proc = sum(1 for r in rows if (r.get("state") or "").upper() == "PROCESSING")
+            c_started = sum(1 for r in rows if (r.get("state") or "").upper() == "STARTED")
+            c_succ = sum(1 for r in rows if (r.get("state") or "").upper() == "SUCCEEDED")
+            c_failed = sum(1 for r in rows if (r.get("state") or "").upper() == "FAILED")
+            c_canceled = sum(1 for r in rows if (r.get("state") or "").upper() == "CANCELED")
+            console.print(f"[bold]Summary[/bold]: [cyan]SCHEDULED[/cyan]={c_sched}  [bright_yellow]PROCESSING[/bright_yellow]={c_proc}  [yellow]STARTED[/yellow]={c_started}  [green]SUCCEEDED[/green]={c_succ}  [red]FAILED[/red]={c_failed}  [dim]CANCELED[/dim]={c_canceled}")
+        else:
+            console.print(f"[bold]Summary[/bold]: [cyan]SCHEDULED[/cyan]={c_sched}")
         console.print("")
     except Exception:
         c_sched = sum(1 for r in rows if (r.get("state") or "").upper() == "SCHEDULED")
-        c_proc = sum(1 for r in rows if (r.get("state") or "").upper() == "PROCESSING")
-        c_started = sum(1 for r in rows if (r.get("state") or "").upper() == "STARTED")
-        c_succ = sum(1 for r in rows if (r.get("state") or "").upper() == "SUCCEEDED")
         print("")
-        print(f"Summary: SCHEDULED={c_sched} PROCESSING={c_proc} STARTED={c_started} SUCCEEDED={c_succ}")
+        if show_all:
+            c_proc = sum(1 for r in rows if (r.get("state") or "").upper() == "PROCESSING")
+            c_started = sum(1 for r in rows if (r.get("state") or "").upper() == "STARTED")
+            c_succ = sum(1 for r in rows if (r.get("state") or "").upper() == "SUCCEEDED")
+            c_failed = sum(1 for r in rows if (r.get("state") or "").upper() == "FAILED")
+            c_canceled = sum(1 for r in rows if (r.get("state") or "").upper() == "CANCELED")
+            print(f"Summary: SCHEDULED={c_sched} PROCESSING={c_proc} STARTED={c_started} SUCCEEDED={c_succ} FAILED={c_failed} CANCELED={c_canceled}")
+        else:
+            print(f"Summary: SCHEDULED={c_sched}")
         print("Discovery is read-only; only SCHEDULED events will be considered for subsequent phases.")
         print("")
 
-    print_table("Discovery: Maintenance Events (Processing, Scheduled, Started, Succeeded)", columns, rows, style_map=style_map, state_key="state")
+    table_title = "Discovery: All Maintenance Events" if show_all else "Discovery: SCHEDULED Maintenance Events"
+    print_table(table_title, columns, rows, style_map=style_map, state_key="state")
