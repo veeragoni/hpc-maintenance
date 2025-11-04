@@ -143,9 +143,119 @@ graph LR
 
 The tool is implemented in Python and utilizes a multi-threaded approach to process multiple maintenance jobs concurrently. The `orchestrator.py` module manages the overall workflow, while specific phases are handled by dedicated modules in the `phases` package.
 
+## Installation & Setup
+
+### Prerequisites
+
+- Python 3.9 or higher
+- Access to OCI with appropriate credentials
+- Slurm cluster access (for production use)
+
+### Step 1: Clone the Repository
+
+```bash
+git clone <repository-url>
+cd hpc-maintenance
+```
+
+### Step 2: Create and Activate Virtual Environment
+
+```bash
+# Create virtual environment
+python3 -m venv .venv
+
+# Activate virtual environment
+# On Linux/macOS:
+source .venv/bin/activate
+
+# On Windows:
+# .venv\Scripts\activate
+```
+
+### Step 3: Install Dependencies
+
+```bash
+# Install the package in editable mode with all dependencies
+pip install -e .
+
+# Alternatively, install dependencies from requirements.txt
+pip install -r requirements.txt
+```
+
+### Step 4: Configure Environment
+
+```bash
+# Copy the template environment file
+cp .env.local .env
+
+# Edit .env and set required variables
+# At minimum, configure:
+#   - OCI_TENANCY_OCID=ocid1.tenancy.oc1..your_tenancy_ocid
+#   - REGION=us-ashburn-1 (or your region)
+```
+
+### Step 5: Set Up Configuration Files
+
+```bash
+# Create config directory if it doesn't exist
+mkdir -p config
+
+# Create approved fault codes file
+cat > config/approved_fault_codes.json << 'EOF'
+[
+  "HPCRDMA-0002-02",
+  "COMPUTE-0001-01"
+]
+EOF
+
+# Create excluded hosts file (empty array if none)
+cat > config/excluded_hosts.json << 'EOF'
+[]
+EOF
+```
+
+### Step 6: Verify Installation
+
+```bash
+# Check felix is installed correctly
+felix --version
+
+# Run a dry-run discovery to test configuration
+felix discover --all
+
+# Test with dry-run mode
+felix run --dry-run
+```
+
+### Notes
+
+- The `felix` command will be available in your PATH after installation
+- Keep your virtual environment activated when running felix commands
+- The `.env` file is gitignored to prevent committing secrets
+- Configuration files under `config/` can be version controlled (without sensitive data)
+
 ## Usage
 
-To run the maintenance tool, execute the CLI command provided in `cli.py`. The tool logs its activities, and the log files can be found in the designated log directory.
+To run the maintenance tool, use the `felix` command with any of the subcommands listed in the CLI Options section below. The tool logs its activities to the configured log directory (default: `logs/`).
+
+### Quick Start Examples
+
+```bash
+# Discover maintenance events (read-only)
+felix discover
+
+# Run full workflow once in dry-run mode (safe preview)
+felix run --dry-run
+
+# Run full workflow once (executes actions)
+felix run
+
+# Start continuous maintenance loop
+felix loop
+
+# Generate a report of all maintenance events
+felix report
+```
 
 ## Configuration
 
