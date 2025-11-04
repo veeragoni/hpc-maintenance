@@ -194,22 +194,91 @@ The project dependencies are listed in `requirements.txt`. Ensure you have the n
 
 ## CLI Options
 
-- Full workflow once:
-  - felix run [--dry-run]
-- Periodic loop (every LOOP_INTERVAL_SEC):
-  - felix loop [--dry-run]
-- Stage-only (discover → drain → schedule; no health/finalize):
-  - felix stage [--dry-run]
-- Visibility/reporting (no actions):
-  - felix report
-- Per-phase helpers:
-  - felix drain <hostname>
-  - felix maintenance <hostname>
-  - felix health <hostname>
-  - felix finalize <hostname>
+### Main Workflow Commands
 
-Notes:
-- --dry-run never invokes scontrol or OCI scheduling; used to validate approved and excluded lists safely.
+- **Full workflow once:**
+  ```bash
+  felix run [--dry-run | -n]
+  ```
+  Executes the complete maintenance workflow: discover → drain → schedule → health → finalize
+
+- **Periodic loop:**
+  ```bash
+  felix loop [--dry-run | -n]
+  ```
+  Runs the full maintenance workflow continuously at intervals (default: every LOOP_INTERVAL_SEC)
+
+- **Stage-only workflow:**
+  ```bash
+  felix stage [--dry-run | -n]
+  ```
+  Executes partial workflow: discover → drain → schedule (skips health and finalize phases)
+
+- **Catch-up reconciliation:**
+  ```bash
+  felix catchup [--host HOSTNAME] [--dry-run | -n]
+  ```
+  One-shot reconciliation for already-triggered maintenance events (no drain/schedule):
+  - SUCCEEDED/COMPLETED events: runs health → finalize and sets MGMT to "running"
+  - IN_PROGRESS/PROCESSING events: sets MGMT to "NTR scheduled" + reconfigures compute
+  - Optional: limit to specific hostname with `--host`
+
+### Discovery and Reporting Commands
+
+- **Discovery phase:**
+  ```bash
+  felix discover [--json [FILE]] [--all]
+  ```
+  Runs discovery phase only (read-only, no changes):
+  - Shows SCHEDULED events by default in a Rich table
+  - `--all`: Show all maintenance states (not just SCHEDULED)
+  - `--json`: Output JSON to stdout (if no FILE) or write to FILE; skips table output
+
+- **Report maintenance events:**
+  ```bash
+  felix report [--include-canceled] [-x STATE] [--json [FILE]]
+  ```
+  Shows all instance maintenance events in a table:
+  - `--include-canceled`: Include CANCELED events in the table
+  - `-x STATE` or `--exclude STATE`: Exclude events in the given state (can be repeated)
+  - `--json`: Output JSON to stdout (if no FILE) or write to FILE; skips table output
+
+### Per-Phase Helper Commands
+
+- **Drain phase:**
+  ```bash
+  felix drain <hostname>
+  ```
+  Runs drain phase for a specific hostname
+
+- **Maintenance phase:**
+  ```bash
+  felix maintenance <hostname>
+  ```
+  Runs maintenance phase for a specific hostname
+
+- **Health phase:**
+  ```bash
+  felix health <hostname>
+  ```
+  Runs health check phase for a specific hostname
+
+- **Finalize phase:**
+  ```bash
+  felix finalize <hostname>
+  ```
+  Runs finalize phase for a specific hostname
+
+### Global Options
+
+- `--version`: Display felix version
+- `--dry-run` or `-n`: Preview mode - shows intended actions without invoking scontrol or OCI scheduling; used to validate approved and excluded lists safely
+
+### Notes
+
+- Per-phase helper commands (drain, maintenance, health, finalize) automatically discover the maintenance job for the specified hostname before executing
+- Dry-run mode is available for: run, loop, stage, and catchup commands
+- JSON output options allow integration with external tools and automation scripts
 
 ## Configuration Updates
 
