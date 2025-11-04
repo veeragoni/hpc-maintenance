@@ -430,11 +430,9 @@ Before automatically resuming nodes, implement:
 - Log inspection for error signatures (configurable per fault type).
 - Active validation tests mapped by fault type, for example:
   - GPU: DCGM diagnostics, ECC checks, PCIe link width/speed validation.
-  - Networking: single-node NCCL/NiCOL, fabric ping, link error counters.
+  - Networking: single-node NCCL, fabric ping, link error counters.
   - Compute: HPL/ROCm micro-benchmark sanity.
 - Outcome handling:
   - PASS: update Slurm reason and RESUME.
   - FAIL: keep drained with reason; raise ticket/alert.
 - JSONL event coverage for each step; MGMT status updates aligned with state.
-
-These items correspond to the “Post-Maintenance Health Checks” and “Triage Results & Update Slurm” phases and will replace the current placeholder health logic.
