@@ -50,6 +50,10 @@ LOG_FILE = Path(os.getenv("LOG_FILE", "maint_orchestrator.log"))
 DRAIN_POLL_SEC = int(os.getenv("DRAIN_POLL_SEC", "30"))
 MAINT_POLL_SEC = int(os.getenv("MAINT_POLL_SEC", "86400"))  # 24 hours
 
+# Override flag: Skip drain state check and allow immediate scheduling
+# When True, maintenance can be scheduled without waiting for node to reach IDLE+DRAIN state
+SKIP_DRAIN_CHECK = os.getenv("SKIP_DRAIN_CHECK", "false").lower() in ("true", "1", "yes")
+
 # Paths for external configuration files
 APPROVED_FAULT_CODES_FILE = Path(os.getenv("APPROVED_FAULT_CODES_FILE", "config/approved_fault_codes.json"))
 EXCLUDED_HOSTS_FILE = Path(os.getenv("EXCLUDED_HOSTS_FILE", "config/excluded_hosts.json"))

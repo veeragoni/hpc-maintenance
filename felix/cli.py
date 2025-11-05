@@ -19,17 +19,20 @@ def main() -> None:
     # Subcommand for running the full maintenance workflow once
     parser_run = subparsers.add_parser("run", help="Run the full maintenance workflow once")
     parser_run.add_argument("--dry-run", "-n", action="store_true", help="Do not make changes; show what would be done")
-    parser_run.set_defaults(func=lambda args: run_once(dry_run=args.dry_run))
+    parser_run.add_argument("--skip-drain-check", action="store_true", help="Skip waiting for IDLE+DRAIN state; schedule maintenance immediately after issuing drain")
+    parser_run.set_defaults(func=lambda args: run_once(dry_run=args.dry_run, skip_drain_check=args.skip_drain_check))
 
     # Subcommand for running the periodic maintenance loop
     parser_loop = subparsers.add_parser("loop", help="Run the periodic maintenance loop (15m interval by default)")
     parser_loop.add_argument("--dry-run", "-n", action="store_true", help="Do not make changes; show what would be done each iteration")
-    parser_loop.set_defaults(func=lambda args: run_loop(dry_run=args.dry_run))
+    parser_loop.add_argument("--skip-drain-check", action="store_true", help="Skip waiting for IDLE+DRAIN state; schedule maintenance immediately after issuing drain")
+    parser_loop.set_defaults(func=lambda args: run_loop(dry_run=args.dry_run, skip_drain_check=args.skip_drain_check))
 
     # Subcommand for staging only (discover -> drain -> schedule)
     parser_stage = subparsers.add_parser("stage", help="Discover -> drain -> schedule (if event state=SCHEDULED); skips health/finalize")
     parser_stage.add_argument("--dry-run", "-n", action="store_true", help="Do not make changes; show what would be done")
-    parser_stage.set_defaults(func=lambda args: run_stage(dry_run=args.dry_run))
+    parser_stage.add_argument("--skip-drain-check", action="store_true", help="Skip waiting for IDLE+DRAIN state; schedule maintenance immediately after issuing drain")
+    parser_stage.set_defaults(func=lambda args: run_stage(dry_run=args.dry_run, skip_drain_check=args.skip_drain_check))
 
     # Subcommand for reporting: show maintenance events table
     parser_report = subparsers.add_parser("report", help="Show all instance maintenance events (table)")
@@ -49,7 +52,8 @@ def main() -> None:
     # Subcommand for drain phase
     parser_drain = subparsers.add_parser("drain", help="Run drain phase")
     parser_drain.add_argument("hostname", help="Hostname to drain")
-    parser_drain.set_defaults(func=lambda args: _exec_phase_with_discovery(args.hostname, drain.execute))
+    parser_drain.add_argument("--skip-drain-check", action="store_true", help="Skip waiting for IDLE+DRAIN state; return immediately after issuing drain")
+    parser_drain.set_defaults(func=lambda args: _exec_phase_with_discovery(args.hostname, drain.execute, skip_drain_check=args.skip_drain_check))
 
     # Subcommand for maintenance phase
     parser_maintenance = subparsers.add_parser("maintenance", help="Run maintenance phase")
@@ -79,13 +83,16 @@ def main() -> None:
     setup_logging()
 
     # Helper function to execute a phase after discovery
-    def _exec_phase_with_discovery(hostname, phase_fn):
+    def _exec_phase_with_discovery(hostname, phase_fn, skip_drain_check=False):
         from .phases.discovery import discover
         jobs = discover()
         job = next((j for j in jobs if j.hostname == hostname), None)
         if not job:
             print(f"Error: No maintenance job/event found for hostname '{hostname}'.")
             return
+        # Pass skip_drain_check to job for drain phase to use
+        if skip_drain_check:
+            job.skip_drain_check = skip_drain_check
         return phase_fn(job)
 
     if hasattr(args, 'func'):

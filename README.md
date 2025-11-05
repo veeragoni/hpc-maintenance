@@ -272,6 +272,7 @@ Setup:
   - `DAILY_SCHEDULE_CAP`, `LOOP_INTERVAL_SEC`
   - `PROCESSED_TAG`
   - `EVENTS_LOG_FILE`
+  - `SKIP_DRAIN_CHECK` (set to `true`, `1`, or `yes` to skip waiting for IDLE+DRAIN state)
   - `APPROVED_FAULT_CODES` (comma-separated fallback) or use `config/approved_fault_codes.json`
   - `APPROVED_FAULT_CODES_FILE` (defaults to `config/approved_fault_codes.json`)
   - `EXCLUDED_HOSTS_FILE` (defaults to `config/excluded_hosts.json`)
@@ -301,6 +302,13 @@ The project dependencies are listed in `requirements.txt`. Ensure you have the n
 - Exact fault matching and exclusions:
   - Approved fault codes are matched exactly from config/approved_fault_codes.json.
   - Hosts in config/excluded_hosts.json are skipped before any action.
+- **Drain state override:**
+  - Set `SKIP_DRAIN_CHECK=true` in `.env` to globally skip drain checks, OR use `--skip-drain-check` CLI flag for per-command override
+  - When enabled, the drain command is still issued but the workflow proceeds immediately without waiting for IDLE+DRAIN state
+  - CLI flag takes precedence and can be used without modifying configuration files
+  - Available on: `felix run`, `felix loop`, `felix stage`, and `felix drain` commands
+  - Use this for urgent maintenance scenarios or when you need to schedule regardless of node state
+  - WARNING: Using this override may schedule maintenance while jobs are still running on the node
 
 ## CLI Options
 
@@ -308,21 +316,24 @@ The project dependencies are listed in `requirements.txt`. Ensure you have the n
 
 - **Full workflow once:**
   ```bash
-  felix run [--dry-run | -n]
+  felix run [--dry-run | -n] [--skip-drain-check]
   ```
   Executes the complete maintenance workflow: discover → drain → schedule → health → finalize
+  - `--skip-drain-check`: Skip waiting for IDLE+DRAIN state; schedule maintenance immediately after issuing drain
 
 - **Periodic loop:**
   ```bash
-  felix loop [--dry-run | -n]
+  felix loop [--dry-run | -n] [--skip-drain-check]
   ```
   Runs the full maintenance workflow continuously at intervals (default: every LOOP_INTERVAL_SEC)
+  - `--skip-drain-check`: Skip waiting for IDLE+DRAIN state; schedule maintenance immediately after issuing drain
 
 - **Stage-only workflow:**
   ```bash
-  felix stage [--dry-run | -n]
+  felix stage [--dry-run | -n] [--skip-drain-check]
   ```
   Executes partial workflow: discover → drain → schedule (skips health and finalize phases)
+  - `--skip-drain-check`: Skip waiting for IDLE+DRAIN state; schedule maintenance immediately after issuing drain
 
 - **Catch-up reconciliation:**
   ```bash
@@ -357,9 +368,10 @@ The project dependencies are listed in `requirements.txt`. Ensure you have the n
 
 - **Drain phase:**
   ```bash
-  felix drain <hostname>
+  felix drain <hostname> [--skip-drain-check]
   ```
   Runs drain phase for a specific hostname
+  - `--skip-drain-check`: Skip waiting for IDLE+DRAIN state; return immediately after issuing drain
 
 - **Maintenance phase:**
   ```bash

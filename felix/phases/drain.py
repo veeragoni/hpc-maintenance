@@ -1,6 +1,8 @@
 from ..models import MaintenanceJob
 from ..slrum_utils import drain, wait_drained_empty
 from ..eventlog import log_event
+from ..config import SKIP_DRAIN_CHECK
+import logging
 
 def execute(job: MaintenanceJob) -> None:
     """
@@ -26,6 +28,18 @@ def execute(job: MaintenanceJob) -> None:
     reason = f"NTR {job.approved_fault or job.fault_str}"
     log_event({"phase": "drain", "action": "requested", "host": job.hostname, "reason": reason})
     drain(job.hostname, reason)
-    # Wait until node transitions through DRAINING and becomes DRAIN (empty: IDLE+DRAIN)
-    wait_drained_empty(job.hostname)
-    log_event({"phase": "drain", "action": "drained_empty", "host": job.hostname})
+
+    # Check override flag: check both config and job-level parameter (CLI argument)
+    skip_check = SKIP_DRAIN_CHECK or getattr(job, "skip_drain_check", False)
+    if skip_check:
+        logging.info("SKIP_DRAIN_CHECK enabled: skipping wait for IDLE+DRAIN state on %s", job.hostname)
+        log_event({
+            "phase": "drain",
+            "action": "drain_check_skipped",
+            "host": job.hostname,
+            "reason": "SKIP_DRAIN_CHECK override enabled"
+        })
+    else:
+        # Wait until node transitions through DRAINING and becomes DRAIN (empty: IDLE+DRAIN)
+        wait_drained_empty(job.hostname)
+        log_event({"phase": "drain", "action": "drained_empty", "host": job.hostname})

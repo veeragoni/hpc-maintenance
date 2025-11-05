@@ -1,6 +1,6 @@
 import concurrent.futures as cf, logging, time
 from .models import MaintenanceJob
-from .config import MAX_WORKERS, DAILY_SCHEDULE_CAP, LOOP_INTERVAL_SEC, is_fault_approved, is_host_excluded
+from .config import MAX_WORKERS, DAILY_SCHEDULE_CAP, LOOP_INTERVAL_SEC, SKIP_DRAIN_CHECK, is_fault_approved, is_host_excluded
 from .logging_util import setup_logging
 from .mgmt_utils import mgmt_update_node_status, mgmt_reconfigure_compute
 
@@ -50,7 +50,12 @@ def _process_stage(job: MaintenanceJob) -> None:
     except Exception as exc:
         logging.exception("[STAGE] Workflow failed for %s: %s", job.hostname, exc)
 
-def run_once(dry_run: bool = False) -> None:
+def run_once(dry_run: bool = False, skip_drain_check: bool = False) -> None:
+    # Check both config and CLI argument
+    effective_skip = SKIP_DRAIN_CHECK or skip_drain_check
+    if effective_skip:
+        logging.warning("SKIP_DRAIN_CHECK is enabled: maintenance will be scheduled without waiting for IDLE+DRAIN state")
+
     all_jobs = discovery.discover()
     if not all_jobs:
         logging.info("No maintenance events to process.")
@@ -65,6 +70,7 @@ def run_once(dry_run: bool = False) -> None:
                 logging.info("Excluding %s by config (approved fault %s); skipping.", j.hostname, approved_fault)
                 continue
             j.approved_fault = approved_fault
+            j.skip_drain_check = effective_skip
             approved.append(j)
         else:
             logging.info("Skipping %s: faults not in whitelist %s", j.hostname, j.fault_ids)
@@ -97,11 +103,16 @@ def run_once(dry_run: bool = False) -> None:
     with cf.ThreadPoolExecutor(max_workers=min(len(capped), MAX_WORKERS)) as pool:
         list(pool.map(_process, capped))   # waits for completion
 
-def run_stage(dry_run: bool = False) -> None:
+def run_stage(dry_run: bool = False, skip_drain_check: bool = False) -> None:
     """
     Run a single pass that performs: discover -> filter (approved/excluded) -> drain -> schedule
     Health and finalize are intentionally skipped.
     """
+    # Check both config and CLI argument
+    effective_skip = SKIP_DRAIN_CHECK or skip_drain_check
+    if effective_skip:
+        logging.warning("[STAGE] SKIP_DRAIN_CHECK is enabled: maintenance will be scheduled without waiting for IDLE+DRAIN state")
+
     all_jobs = discovery.discover()
     if not all_jobs:
         logging.info("[STAGE] No maintenance events to process.")
@@ -116,6 +127,7 @@ def run_stage(dry_run: bool = False) -> None:
                 logging.info("[STAGE] Excluding %s by config (approved fault %s); skipping.", j.hostname, approved_fault)
                 continue
             j.approved_fault = approved_fault
+            j.skip_drain_check = effective_skip
             approved.append(j)
         else:
             logging.info("[STAGE] Skipping %s: faults not in whitelist %s", j.hostname, j.fault_ids)
@@ -148,12 +160,12 @@ def run_stage(dry_run: bool = False) -> None:
     with cf.ThreadPoolExecutor(max_workers=min(len(capped), MAX_WORKERS)) as pool:
         list(pool.map(_process_stage, capped))   # waits for completion
 
-def run_loop(dry_run: bool = False) -> None:
+def run_loop(dry_run: bool = False, skip_drain_check: bool = False) -> None:
     """Periodic orchestrator loop."""
     logging.info("Starting maintenance loop with interval=%ss%s", LOOP_INTERVAL_SEC, " [DRY RUN]" if dry_run else "")
     while True:
         try:
-            run_once(dry_run=dry_run)
+            run_once(dry_run=dry_run, skip_drain_check=skip_drain_check)
         except Exception as exc:
             logging.exception("Loop iteration failed: %s", exc)
         time.sleep(LOOP_INTERVAL_SEC)
