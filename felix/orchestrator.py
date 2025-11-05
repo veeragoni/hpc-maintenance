@@ -91,6 +91,10 @@ def run_once(dry_run: bool = False, skip_drain_check: bool = False) -> None:
             inst_id = getattr(j.event, "instance_id", None)
             logging.info("[DRY RUN] %s: event=%s instance=%s state=%s fault=%s", j.hostname, j.event.id, inst_id, state, j.approved_fault)
             logging.info("[DRY RUN] Would DRAIN %s with reason '%s'", j.hostname, f"NTR {j.approved_fault}")
+            if effective_skip:
+                logging.info("[DRY RUN] Would skip waiting for IDLE+DRAIN state (--skip-drain-check enabled)")
+            else:
+                logging.info("[DRY RUN] Would wait for %s to reach IDLE+DRAIN state", j.hostname)
             if state == "SCHEDULED":
                 import datetime as dt
                 scheduled_time = (dt.datetime.utcnow() + dt.timedelta(minutes=5)).replace(microsecond=0).isoformat() + "Z"
@@ -148,6 +152,10 @@ def run_stage(dry_run: bool = False, skip_drain_check: bool = False) -> None:
             inst_id = getattr(j.event, "instance_id", None)
             logging.info("[STAGE][DRY RUN] %s: event=%s instance=%s state=%s fault=%s", j.hostname, j.event.id, inst_id, state, j.approved_fault)
             logging.info("[STAGE][DRY RUN] Would DRAIN %s with reason '%s'", j.hostname, f"NTR {j.approved_fault}")
+            if effective_skip:
+                logging.info("[STAGE][DRY RUN] Would skip waiting for IDLE+DRAIN state (--skip-drain-check enabled)")
+            else:
+                logging.info("[STAGE][DRY RUN] Would wait for %s to reach IDLE+DRAIN state", j.hostname)
             # In stage dry-run, simulate scheduling even if current state != SCHEDULED
             import datetime as dt
             scheduled_time = (dt.datetime.utcnow() + dt.timedelta(minutes=5)).replace(microsecond=0).isoformat() + "Z"
