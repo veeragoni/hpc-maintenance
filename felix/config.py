@@ -56,14 +56,21 @@ EXCLUDED_HOSTS_FILE = Path(os.getenv("EXCLUDED_HOSTS_FILE", "config/excluded_hos
 EVENTS_LOG_FILE = Path(os.getenv("EVENTS_LOG_FILE", "logs/events.jsonl"))
 
 def _read_json_list(path: Path) -> List[str]:
+    import logging
     try:
         if path.exists():
             with path.open(encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, list):
                     return [str(x) for x in data]
-    except Exception:
-        pass
+                else:
+                    logging.warning(f"File {path} does not contain a JSON array")
+        else:
+            logging.warning(f"File {path} does not exist")
+    except json.JSONDecodeError as e:
+        logging.error(f"JSON parse error in {path}: {e}")
+    except Exception as e:
+        logging.error(f"Error reading {path}: {e}")
     return []
 
 
@@ -91,10 +98,14 @@ def is_host_excluded(hostname: str) -> bool:
     return hostname in get_excluded_hosts()
 
 def get_approved_faults() -> set[str]:
+    import logging
     arr = _read_json_list(APPROVED_FAULT_CODES_FILE)
     if arr:
-        return {s.strip() for s in arr if isinstance(s, str) and s.strip()}
+        result = {s.strip() for s in arr if isinstance(s, str) and s.strip()}
+        logging.debug(f"Loaded approved faults from {APPROVED_FAULT_CODES_FILE}: {result}")
+        return result
     # Fallback to env if file empty or missing
+    logging.debug(f"Using approved faults from env fallback: {APPROVED_FAULT_CODES}")
     return set(APPROVED_FAULT_CODES)
 
 def is_fault_approved(fault_ids: list[str]) -> str | None:
