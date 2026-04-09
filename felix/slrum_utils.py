@@ -6,6 +6,17 @@ from .formatting import print_json_data
 
 log = logging.getLogger(__name__)
 
+
+def state_has_flag(state: str, flag: str) -> bool:
+    """Return True when the Slurm state contains an exact state flag."""
+    tokens = [token for token in re.split(r"[^a-z]+", state.lower()) if token]
+    return flag.lower() in tokens
+
+
+def is_drained(host: str) -> bool:
+    """Return True when the node already has a real DRAIN state flag."""
+    return state_has_flag(get_state(host), "drain")
+
 def drain(host: str, reason: str) -> None:
     run_cmd([
         "sudo", "scontrol", "update",

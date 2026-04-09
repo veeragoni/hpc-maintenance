@@ -1,5 +1,5 @@
 from ..models import MaintenanceJob
-from ..slrum_utils import drain, wait_drained_empty
+from ..slrum_utils import drain, wait_drained_empty, is_drained
 from ..eventlog import log_event
 from ..config import SKIP_DRAIN_CHECK
 import logging
@@ -22,6 +22,11 @@ def execute(job: MaintenanceJob) -> None:
             "maintenance_event_type": ev_type,
             "instance_action": action,
         })
+        return
+
+    if is_drained(job.hostname):
+        logging.info("Node %s already has DRAIN state; continuing to next step.", job.hostname)
+        log_event({"phase": "drain", "action": "already_drained", "host": job.hostname})
         return
 
     # Use the approved fault code if available; otherwise fall back to discovered fault string
